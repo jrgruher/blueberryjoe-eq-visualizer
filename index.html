@@ -140,12 +140,12 @@
 <body>
 <div id="app">
   <div id="topbar">
-    <span class="title">🫐 BlueberryEQ<span class="ver">v0.2</span></span>
+    <span class="title">🫐 BlueberryEQ<span class="ver">v0.3</span></span>
     <button id="playBtn" title="Play / Pause (Space)">▶ Play</button>
     <button id="prevBtn" title="Previous station">⏮</button>
     <button id="nextBtn" title="Next station">⏭</button>
     <div class="seg-controls" title="Volume (↑ / ↓)">
-      Vol <input id="vol" type="range" min="0" max="1" step="0.01" value="1">
+      Vol <input id="vol" type="range" min="0" max="1" step="0.01" value="0.5">
     </div>
     <div class="seg-controls" title="Sensitivity / gain">
       Gain <input id="gain" type="range" min="0.4" max="3" step="0.05" value="0.95">
@@ -177,7 +177,7 @@
         <option value="bars">Bars (frequency)</option>
       </select>
     </label>
-    <button id="resetViewBtn" title="Reset bars, rows, gain, brightness, theme to defaults">⟳ Reset View</button>
+    <button id="resetViewBtn" title="Reset volume, gain, bars, rows, brightness, theme to defaults">⟳ Reset Settings</button>
     <div class="spacer"></div>
     <span id="nowplaying">No station selected</span>
     <button id="saveCfgBtn" title="Save settings + stations to a file">💾 Save</button>
@@ -190,8 +190,9 @@
   <div id="main">
     <div id="sidebar">
       <h3 style="display:flex;align-items:center;justify-content:space-between;gap:6px">Stations
-        <span style="display:flex;gap:6px">
+        <span style="display:flex;gap:6px;align-items:center">
           <label title="Hide stations that failed to load" style="display:flex;align-items:center;gap:3px;font-size:10px;text-transform:none;letter-spacing:0;color:var(--txt-dim);cursor:pointer"><input id="hideOffline" type="checkbox" style="cursor:pointer"> hide offline</label>
+          <button id="testAllBtn" title="Test every station's playback in your browser" style="padding:3px 8px;font-size:11px">🧪 Test</button>
           <button id="resetBtn" title="Reset to default stations" style="padding:3px 8px;font-size:11px">↺ Reset</button>
         </span>
       </h3>
@@ -230,7 +231,7 @@
 <div id="helpOverlay">
   <div id="helpBox">
     <header>
-      <h2>🫐 BlueberryEQ — How It Works <span style="font-size:11px;color:var(--txt-dim);font-weight:600">v0.2</span></h2>
+      <h2>🫐 BlueberryEQ — How It Works <span style="font-size:11px;color:var(--txt-dim);font-weight:600">v0.3</span></h2>
       <button id="helpClose" title="Close (Esc)">×</button>
     </header>
     <div class="body">
@@ -250,7 +251,7 @@
         <li><kbd>Space</kbd> play/pause · <kbd>←</kbd>/<kbd>→</kbd> change station · <kbd>F</kbd> fullscreen</li>
         <li><kbd>↑</kbd>/<kbd>↓</kbd> volume · <kbd>+</kbd>/<kbd>-</kbd> gain</li>
         <li><kbd>[</kbd>/<kbd>]</kbd> bars · <kbd>{</kbd>/<kbd>}</kbd> rows · <kbd>,</kbd>/<kbd>.</kbd> brightness</li>
-        <li><kbd>t</kbd>/<kbd>T</kbd> cycle theme · <kbd>c</kbd> color mode · <kbd>r</kbd> reset view</li>
+        <li><kbd>t</kbd>/<kbd>T</kbd> cycle theme · <kbd>c</kbd> color mode · <kbd>r</kbd> reset settings</li>
         <li class="muted">All hotkeys work in fullscreen — a small label shows the change.</li>
       </ul>
 
@@ -283,6 +284,7 @@
 
       <h3>Good to know</h3>
       <ul>
+        <li class="muted">While music is playing, the screen is kept awake (it won't dim or sleep) using the browser's Wake Lock — handy in fullscreen. It releases when you pause.</li>
         <li class="muted">Some stations stream over <code>http://</code>. They work when you open this file directly (the normal way). If you ever host the page on <code>https://</code>, browsers block those — the <code>https</code> stations still work.</li>
         <li class="muted">A station only drives the bars if its server allows cross-origin reads (all built-in stations are pre-verified).</li>
       </ul>
@@ -300,7 +302,7 @@ const canvas  = $('#viz');
 const ctx     = canvas.getContext('2d', { alpha:false });
 
 // ---------- default stations (CORS-verified D&B / jungle / liquid / neurofunk / lofi) ----------
-const DEFAULTS_VERSION = 7;
+const DEFAULTS_VERSION = 12;
 const DEFAULT_STATIONS = [
   // DNBRADIO
   { name:'DNBRADIO — Main (MP3 US)',     url:'https://azura.drmnbss.org/listen/dnbradio/radio.mp3' },
@@ -311,23 +313,17 @@ const DEFAULT_STATIONS = [
   { name:'DNBRADIO — Darkstep',          url:'https://azura.drmnbss.org/listen/darkstep/radio.mp3' },
   // Bassdrive
   { name:'Bassdrive — Worldwide D&B',    url:'http://ice.bassdrive.net:80/stream' },
-  { name:'Bassdrive — Chicago',          url:'http://chi.bassdrive.co:80' },
-  { name:'Bassdrive — UK',               url:'http://stream.bassdrive.uk:8200' },
   // Jungle / oldskool
-  { name:'Kool FM — Jungle/D&B (London)', url:'https://admin.stream.rinse.fm/proxy/kool/stream' },
   { name:'Strictly Ragga Jungle',        url:'http://s6.citrus3.com:8526/stream' },
   { name:'Energy 1058 — Jungle/Oldskool', url:'http://tachyon.shoutca.st:8590/stream' },
   { name:'Eruption Radio — Oldskool/D&B', url:'http://streaming04.liveboxstream.uk:8116/stream' },
   // Bass music stations
-  { name:'Sub FM',                       url:'https://subfm.radioca.st/', genre:'D&B' },
-  { name:'SWU FM',                       url:'https://admin.stream.rinse.fm/proxy/swu/stream', genre:'D&B' },
   { name:'Kane FM',                      url:'http://stream.kanefm.com:1037/;stream', genre:'D&B' },
   // Liquid / atmospheric
   { name:'Atmospheric D&B (s0urce, AAC 320)', url:'https://brokenbeats.net/stream/aac' },
   { name:'Brokenbeats — Tune',           url:'https://stream.brokenbeats.net/tune' },
   { name:'Liquid DnB',                   url:'https://antares.dribbcast.com/proxy/dave1/stream/' },
   { name:'Radio Record — Liquid Funk',   url:'https://radiorecord.hostingradio.ru/liquidfunk96.aacp' },
-  { name:'Dutch Delite — Drum & Bass',   url:'http://radio.dutchdelite.nl:8000/dnb' },
   // Neurofunk / harder
   { name:'WSSR — Sector Seven (Neuro)',  url:'https://broadcast.wssr.stream/radio/8000/radio.mp3' },
   { name:'Back2Noize Radio',             url:'https://securestreams4.autopo.st:1558/Back2Noize' },
@@ -345,16 +341,13 @@ const DEFAULT_STATIONS = [
   { name:'ISEKOI — Chill Zone',          url:'https://public.isekoi-radio.com/listen/chill/radio.mp3' },
   { name:'Radio Record — Lo-Fi',         url:'https://radiorecord.hostingradio.ru/lofi96.aacp' },
   { name:'Radio Relax — Lo-Fi',          url:'https://radio8.dixi.md/listen/relax_lofi/relax_lofi128.aac' },
-  { name:'CalmFlow — Chillstep',         url:'https://stream.24dubstep.pl/listen/chillstep/mp3_normal' },
   { name:'MonteCarlo Nights — Chill Lounge', url:'https://mc-chilllonge.hostingradio.ru/chilllonge96.aacp' },
-  { name:'hotmix — LoFi',                url:'https://streaming.hotmixradio.com/hotmix-lofi-en-mp3' },
   { name:'b3cks Radio — Lofi',           url:'https://radio.b3ck.com/listen/b3cks-radio/radio.mp3' },
   { name:'irvess — Lofi',                url:'https://irvess.com/stream/irvess' },
   // Hip-Hop / Rap / Funk
   { name:'FIP Hip Hop (France, AAC 192)', url:'http://icecast.radiofrance.fr/fiphiphop-hifi.aac', genre:'Hip-Hop' },
   { name:'WEFUNK Radio — Hip-Hop/Funk',  url:'https://s-17.wefunkradio.com:8443/wefunk64.mp3', genre:'Hip-Hop' },
   { name:'Radio Nova (France)',          url:'https://novazz.ice.infomaniak.ch/novazz-128.mp3', genre:'Hip-Hop' },
-  { name:'KISS XTRA — Black Music',      url:'https://live-bauerkiss.sharp-stream.com/kissfresh.aac?direct=true', genre:'Hip-Hop' },
   { name:'Urban Radio — Hip-Hop / R&B',  url:'http://hydra.cdnstream.com/1536_128', genre:'Hip-Hop' },
   { name:'GotRadio — Hip Hop Stop',      url:'http://pureplay.cdnstream1.com/6041_128.mp3', genre:'Hip-Hop' },
   { name:'SUN Hip Hop (France)',         url:'https://diffusion.lafrap.fr/sun-hip-hop.mp3', genre:'Hip-Hop' },
@@ -366,7 +359,6 @@ const DEFAULT_STATIONS = [
   { name:'RadioSpinner — Atmospheric Breaks', url:'https://tower.hayva.ru/5jwuo-96', genre:'Breaks' },
   { name:'674FM (breaks/bass)',          url:'http://audio.674.fm/stream', genre:'Breaks' },
   { name:'UPFront Radio (breaks)',       url:'http://uk1.streamingpulse.com:7091/;', genre:'Breaks' },
-  { name:'Renegade Radio (breaks/jungle)', url:'http://149.255.60.195:8085/stream', genre:'Breaks' },
   { name:'NEU RADIO (breaks/eclectic)',  url:'https://nr9.newradio.it/proxy/ebaruffa?mp=/stream', genre:'Breaks' },
   { name:'ADRN — Jungle & Breakbeat',    url:'http://abm22.com.au:8000/CONTAINER39', genre:'Breaks' },
   { name:'Decibelia FM (breaks)',        url:'http://master.shoutcast.com:8000/decibelia', genre:'Breaks' },
@@ -374,11 +366,14 @@ const DEFAULT_STATIONS = [
   { name:'Infrared.fm — D&B',            url:'https://carol.epichosts.co.uk:8232/live.mp3', genre:'D&B' },
   { name:'Meiji Drums Radio — D&B',      url:'https://radio.meiji.industries/drums', genre:'D&B' },
   { name:'Netil Radio (London)',         url:'https://netilradio.out.airtime.pro/netilradio_a', genre:'D&B' },
-  { name:'Rinse FM (London)',            url:'https://admin.stream.rinse.fm/proxy/rinse_uk/stream', genre:'D&B' },
   { name:'RES (320k)',                   url:'https://res.lirz.ru/listen/res/radio.mp3', genre:'D&B' },
   { name:'drumbase.space',               url:'https://radio.drumbase.space/listen/drumbase.space/radio.mp3', genre:'D&B' },
   { name:'Playback UK',                  url:'https://chilledstreaming.com:8650/mobile.mp3', genre:'D&B' },
-  { name:'Oldskool UK',                  url:'https://usa10.fastcast4u.com:8880/', genre:'D&B' },
+  // MP3 D&B/jungle additions (v0.3)
+  { name:'Jungle Planet Radio (320)',    url:'https://phoebe.streamerr.co:3650/;?type=http', genre:'D&B' },
+  { name:'Fly Foot Selecta (jungle)',    url:'https://manager5.streamradio.fr:1185/stream', genre:'D&B' },
+  { name:'Breaking Bass Air (320)',      url:'https://aircast.breaking-bass.ru:8443/air', genre:'D&B' },
+  { name:'DnB & EDM',                    url:'https://edmdnb.com:448/radio/8000/radio.mp3', genre:'D&B' },
   // Bass music (dubstep / riddim / future bass / garage / trap)
   { name:'SomaFM — Dub Step Beyond (256k)', url:'https://ice6.somafm.com/dubstep-256-mp3', genre:'Bass' },
   { name:'SomaFM — Dub Step Beyond (128k)', url:'https://ice2.somafm.com/dubstep-128-mp3', genre:'Bass' },
@@ -388,6 +383,18 @@ const DEFAULT_STATIONS = [
   { name:'PulseEDM — Dubstep/Bass',      url:'http://pulseedm.cdnstream1.com:8124/1373_128', genre:'Bass' },
   { name:'ADRN — UK Garage',             url:'http://abm22.com.au:8000/CONTAINER15', genre:'Bass' },
   { name:'dr_dick\'s dub shack',          url:'https://streamer.radio.co/s0635c8b0d/listen', genre:'Bass' },
+  { name:'SomaFM — Cliqhop (IDM/glitch)', url:'https://ice2.somafm.com/cliqhop-128-mp3', genre:'Bass' },
+  // SomaFM + others (very reliable, MP3/CORS) — added v0.2
+  { name:'SomaFM — Groove Salad (chill)', url:'https://ice2.somafm.com/groovesalad-128-mp3', genre:'Lofi' },
+  { name:'SomaFM — Drone Zone (ambient)', url:'https://ice2.somafm.com/dronezone-128-mp3', genre:'Lofi' },
+  { name:'SomaFM — Beat Blender',         url:'https://ice2.somafm.com/beatblender-128-mp3', genre:'Lofi' },
+  { name:'SomaFM — Space Station Soma',   url:'https://ice2.somafm.com/spacestation-128-mp3', genre:'Lofi' },
+  { name:'SomaFM — Lush (vocal chill)',   url:'https://ice2.somafm.com/lush-128-mp3', genre:'Lofi' },
+  { name:'SomaFM — Fluid (instr. hip-hop)', url:'https://ice2.somafm.com/fluid-128-mp3', genre:'Hip-Hop' },
+  { name:'SomaFM — Seven Inch Soul',      url:'https://ice2.somafm.com/7soul-128-mp3', genre:'Hip-Hop' },
+  { name:'FIP Groove (funk/soul/jazz)',   url:'http://icecast.radiofrance.fr/fipgroove-hifi.aac', genre:'Hip-Hop' },
+  { name:'DnB Liquified',                 url:'http://antares.dribbcast.com:5000/stream', genre:'D&B' },
+  { name:'DnBRadio — Main (FR Mirror 320)', url:'http://ildnb1.dnbradio.com:8000/dnbradio_main.mp3', genre:'D&B' },
 ];
 
 let stations = loadStations();
@@ -536,6 +543,7 @@ audio.addEventListener('playing', ()=>{
   clearTimeout(loadWatchdog);
   retryCount = 0;
   $('#playBtn').textContent='⏸ Pause';
+  requestWakeLock();
   if (current>=0){
     const s = stations[current];
     setStatus(s.url, 'ok');
@@ -543,8 +551,26 @@ audio.addEventListener('playing', ()=>{
     hideHint();
   }
 });
-audio.addEventListener('pause', ()=> $('#playBtn').textContent='▶ Play');
+audio.addEventListener('pause', ()=>{ $('#playBtn').textContent='▶ Play'; releaseWakeLock(); });
 audio.addEventListener('error', ()=>{ if(current>=0) handleFailure(stations[current], 'stream error'); });
+
+// ---------- screen wake lock (keep monitor awake while playing) ----------
+let wakeLock = null;
+async function requestWakeLock(){
+  if (!('wakeLock' in navigator)) return;
+  if (wakeLock) return;
+  try{
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', ()=>{ wakeLock = null; });
+  }catch(e){ /* user gesture / power-save may block it */ }
+}
+function releaseWakeLock(){
+  if (wakeLock){ try{ wakeLock.release(); }catch{} wakeLock = null; }
+}
+// the OS auto-releases the lock when the tab is hidden; re-acquire when visible & playing
+document.addEventListener('visibilitychange', ()=>{
+  if (document.visibilityState==='visible' && !audio.paused) requestWakeLock();
+});
 
 function togglePlay(){
   if (current < 0){ if(stations.length) playStation(0); return; }
@@ -553,6 +579,53 @@ function togglePlay(){
 }
 function nextStation(){ if(stations.length) playStation((current+1+stations.length)%stations.length); }
 function prevStation(){ if(stations.length) playStation((current-1+stations.length)%stations.length); }
+
+// ---------- test all stations (real browser playback test) ----------
+let testing = false;
+function testOne(audioEl, url){
+  return new Promise(resolve=>{
+    let done=false;
+    const finish=ok=>{ if(done)return; done=true; cleanup(); resolve(ok); };
+    const onPlay=()=>finish(true);
+    const onErr =()=>finish(false);
+    const cleanup=()=>{
+      audioEl.removeEventListener('canplay', onPlay);
+      audioEl.removeEventListener('playing', onPlay);
+      audioEl.removeEventListener('error', onErr);
+      clearTimeout(timer);
+      try{ audioEl.pause(); }catch{}
+    };
+    audioEl.addEventListener('canplay', onPlay);
+    audioEl.addEventListener('playing', onPlay);
+    audioEl.addEventListener('error', onErr);
+    const timer=setTimeout(()=>finish(false), 9000);
+    try{
+      audioEl.src=url; audioEl.load();
+      const p=audioEl.play(); if(p&&p.catch) p.catch(()=>{});
+    }catch{ finish(false); }
+  });
+}
+async function testAllStations(){
+  if (testing){ testing=false; return; }   // click again to stop
+  testing=true;
+  const wasPlaying = !audio.paused;
+  if (wasPlaying) audio.pause();            // free up the network/decoder
+  const btn=$('#testAllBtn');
+  const tester=new Audio(); tester.crossOrigin='anonymous'; tester.muted=true; tester.volume=0;
+  let ok=0, fail=0;
+  for (let i=0;i<stations.length && testing;i++){
+    const s=stations[i];
+    btn.textContent=`⏳ ${i+1}/${stations.length}`;
+    setStatus(s.url,'loading');
+    const good=await testOne(tester, s.url);
+    setStatus(s.url, good?'ok':'error');
+    good?ok++:fail++;
+    $('#nowplaying').innerHTML=`Testing… <b>${ok} OK</b>, <span style="color:var(--danger)">${fail} failed</span>`;
+  }
+  tester.src=''; testing=false;
+  btn.textContent='🧪 Test';
+  $('#nowplaying').innerHTML=`Test complete: <b>${ok} playable</b>, <span style="color:var(--danger)">${fail} not working</span>. Turn on "hide offline" to filter.`;
+}
 
 // ---------- add / load playlists ----------
 function addUrl(raw){
@@ -744,7 +817,7 @@ function toggleFullscreen(){
 
 // ---------- visualizer ----------
 let NBARS = 160, GAIN = 0.95;
-let VOL = 1.0;                          // audio output volume (0..1)
+let VOL = 0.5;                          // audio output volume (0..1)
 let BRIGHT = 1.0;                       // color brightness multiplier (per-display)
 let COLORAXIS = 'level';                // 'level' = color by height, 'bars' = color by frequency
 let HIDE_OFFLINE = false;               // hide stations flagged as failed
@@ -754,15 +827,17 @@ const peaks = [];                       // peak-hold per bar
 const vals  = [];                       // smoothed bar value per bar
 let barFreqEdges = [];
 
-const VIEW_DEFAULTS = { gain:0.95, bars:160, rows:2.5, bright:1.0, theme:'classic', coloraxis:'level' };
+const VIEW_DEFAULTS = { gain:0.95, bars:160, rows:2.5, bright:1.0, theme:'classic', coloraxis:'level', volume:0.5 };
 function resetView(){
   GAIN=VIEW_DEFAULTS.gain; NBARS=VIEW_DEFAULTS.bars; ROWDENS=VIEW_DEFAULTS.rows;
   BRIGHT=VIEW_DEFAULTS.bright; THEME=VIEW_DEFAULTS.theme; COLORAXIS=VIEW_DEFAULTS.coloraxis;
+  VOL=VIEW_DEFAULTS.volume; audio.volume=VOL;
   $('#gain').value=GAIN; $('#bars').value=NBARS; $('#rows').value=ROWDENS;
   $('#bright').value=BRIGHT; $('#theme').value=THEME; $('#coloraxis').value=COLORAXIS;
+  $('#vol').value=VOL;
   vals.length=0;
   persistSettings();
-  showOSD('View reset');
+  showOSD('Settings reset');
 }
 
 // on-screen display for hotkey feedback (visible in fullscreen)
@@ -963,14 +1038,10 @@ $('#saveCfgBtn').addEventListener('click', downloadSettings);
 $('#loadCfgBtn').addEventListener('click', ()=> $('#cfgInput').click());
 $('#cfgInput').addEventListener('change', e=>{ if(e.target.files[0]) loadSettingsFromFile(e.target.files[0]); e.target.value=''; });
 $('#resetBtn').addEventListener('click', resetStations);
+$('#testAllBtn').addEventListener('click', testAllStations);
 $('#exportStationsBtn').addEventListener('click', exportStations);
 $('#importStationsBtn').addEventListener('click', ()=> $('#stationsImportInput').click());
 $('#stationsImportInput').addEventListener('change', e=>{ if(e.target.files[0]) importStationsFile(e.target.files[0]); e.target.value=''; });
-
-$('#saveCfgBtn').addEventListener('click', downloadSettings);
-$('#loadCfgBtn').addEventListener('click', ()=> $('#cfgInput').click());
-$('#cfgInput').addEventListener('change', e=>{ if(e.target.files[0]) loadSettingsFromFile(e.target.files[0]); e.target.value=''; });
-$('#resetBtn').addEventListener('click', resetStations);
 
 $('#stage').addEventListener('dblclick', toggleFullscreen);
 
@@ -1015,7 +1086,38 @@ document.addEventListener('keydown', e=>{
     case 'c': case 'C': toggleColorAxis(true); break;
     case 'r': case 'R': resetView(); break;
   }
+  eggBuffer(e.key);
 });
+
+// ---------- easter egg: type "div" ----------
+let eggBuf = '';
+function eggBuffer(k){
+  if (!/^[a-z]$/i.test(k)) return;
+  eggBuf = (eggBuf + k.toLowerCase()).slice(-8);
+  if (eggBuf.endsWith('div')) showEgg();
+}
+function showEgg(){
+  if (document.getElementById('eggBox')) return;
+  console.log('%c✅ div successfully centered','color:#39e6a0;font-size:16px;font-weight:bold');
+  const wrap = document.createElement('div');
+  wrap.id = 'eggBox';
+  wrap.style.cssText = 'position:fixed;inset:0;display:grid;place-items:center;'+
+    'z-index:100;background:rgba(0,0,0,.55);backdrop-filter:blur(2px)';
+  wrap.innerHTML =
+    '<div style="background:var(--panel);border:1px solid var(--accent);border-radius:14px;'+
+    'padding:26px 34px;text-align:center;box-shadow:0 0 40px rgba(57,230,160,.4);'+
+    'font-family:inherit;color:var(--txt)">'+
+    '<div style="font-size:42px;margin-bottom:8px">🫐</div>'+
+    '<div style="font-size:20px;font-weight:700;color:var(--accent)">div successfully centered ✅</div>'+
+    '<div style="margin-top:10px;font-size:13px;color:var(--txt-dim)">'+
+    '<code style="background:var(--panel2);border:1px solid var(--edge);border-radius:5px;padding:2px 7px">'+
+    'display:grid; place-items:center;</code></div>'+
+    '<div style="margin-top:14px;font-size:11px;color:var(--txt-dim)">(click anywhere to close)</div>'+
+    '</div>';
+  wrap.addEventListener('click', ()=> wrap.remove());
+  document.body.appendChild(wrap);
+  setTimeout(()=>{ const el=document.getElementById('eggBox'); if(el) el.remove(); }, 6000);
+}
 
 // auto-hide cursor/controls in fullscreen
 let cursorTimer;
