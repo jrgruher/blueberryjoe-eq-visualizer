@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Stereo EQ — Streaming Spectrum Analyzer</title>
+<style>
+  :root{
+    --bg:#0a0b10; --panel:#12141d; --panel2:#191c28; --edge:#2a2f42;
+    --txt:#cfd4e6; --txt-dim:#7c849e; --accent:#39e6a0; --accent2:#ffcc22;
+    --danger:#ff5a4d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+    font-family:"Segoe UI",system-ui,Roboto,Arial,sans-serif;overflow:hidden}
+  #app{display:flex;flex-direction:column;height:100%}
+
+  /* ---- top bar ---- */
+  #topbar{display:flex;align-items:center;gap:10px;padding:8px 12px;
+    background:linear-gradient(#1a1d2a,#11131c);border-bottom:1px solid var(--edge);
+    flex:0 0 auto;flex-wrap:wrap}
+  #topbar .title{font-weight:700;letter-spacing:.5px;color:var(--accent);
+    text-shadow:0 0 8px rgba(57,230,160,.35);margin-right:6px;white-space:nowrap}
+  #topbar .title .ver{font-size:10px;font-weight:600;color:var(--txt-dim);
+    letter-spacing:0;margin-left:4px;vertical-align:top;text-shadow:none}
+  button,select,input[type=text]{font:inherit;color:var(--txt);background:var(--panel2);
+    border:1px solid var(--edge);border-radius:8px;padding:7px 12px;cursor:pointer;
+    transition:.15s}
+  button:hover{background:#242838;border-color:#41496b}
+  button:active{transform:translateY(1px)}
+  button.primary{background:var(--accent);color:#06241a;border-color:var(--accent);font-weight:700}
+  button.primary:hover{filter:brightness(1.08)}
+  input[type=text]{cursor:text;min-width:240px;flex:1}
+  .spacer{flex:1}
+  #nowplaying{font-size:13px;color:var(--txt-dim);max-width:42vw;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #nowplaying b{color:var(--txt)}
+
+  /* ---- main split ---- */
+  #main{flex:1;display:flex;min-height:0}
+  #sidebar{width:300px;flex:0 0 auto;background:var(--panel);
+    border-right:1px solid var(--edge);display:flex;flex-direction:column;min-height:0}
+  #sidebar h3{margin:0;padding:12px 14px 8px;font-size:12px;letter-spacing:1px;
+    text-transform:uppercase;color:var(--txt-dim)}
+  #stations{flex:1;overflow:auto;padding:0 8px 10px}
+
+  /* dark scrollbars to match the UI */
+  #stations{scrollbar-width:thin;scrollbar-color:#2a2f42 var(--panel)}
+  #stations::-webkit-scrollbar{width:10px}
+  #stations::-webkit-scrollbar-track{background:var(--panel)}
+  #stations::-webkit-scrollbar-thumb{background:#2a2f42;border-radius:6px;
+    border:2px solid var(--panel)}
+  #stations::-webkit-scrollbar-thumb:hover{background:#3a4163}
+  *{scrollbar-color:#2a2f42 var(--bg)}
+
+  /* genre filter bar */
+  #genrefilter{display:flex;flex-wrap:wrap;gap:5px;padding:0 12px 8px}
+  #genrefilter button{padding:4px 10px;font-size:11px;border-radius:14px;
+    background:var(--panel2);color:var(--txt-dim)}
+  #genrefilter button:hover{color:var(--txt)}
+  #genrefilter button.active{background:var(--accent);color:#06241a;
+    border-color:var(--accent);font-weight:700}
+  #genrefilter button .cnt{opacity:.6;font-size:10px;margin-left:3px}
+  .station{padding:9px 11px;border-radius:8px;cursor:pointer;display:flex;
+    align-items:center;gap:9px;border:1px solid transparent}
+  .station:hover{background:var(--panel2)}
+  .station.active{background:#10261f;border-color:var(--accent);
+    box-shadow:0 0 0 1px rgba(57,230,160,.25) inset}
+  .station .dot{width:8px;height:8px;border-radius:50%;background:#42496b;flex:0 0 auto}
+  .station.active .dot{background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  .station .meta{min-width:0}
+  .station .name{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .station .sub{font-size:11px;color:var(--txt-dim);white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .station .del{margin-left:auto;opacity:0;color:var(--txt-dim);font-size:16px;
+    padding:0 4px;background:none;border:none}
+  .station:hover .del{opacity:.7}
+  .station .del:hover{color:var(--danger);opacity:1}
+  .station.err{opacity:.55}
+  .station.err .dot{background:var(--danger)!important;box-shadow:0 0 8px var(--danger)}
+  .station.err .name::after{content:' ⚠';color:var(--danger);font-size:11px}
+  .station.loading .dot{background:var(--accent2);
+    animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+  #addrow{padding:10px;border-top:1px solid var(--edge);display:flex;gap:6px}
+  #addrow input{min-width:0}
+
+  /* ---- visualizer ---- */
+  #stage{flex:1;position:relative;min-width:0;background:#05060a}
+  canvas{display:block;width:100%;height:100%}
+  #hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    text-align:center;color:var(--txt-dim);pointer-events:none;transition:opacity .4s}
+  #hint .big{font-size:18px;color:var(--txt);margin-bottom:6px}
+  #stagectl{position:absolute;right:14px;bottom:12px;display:flex;gap:8px;
+    transition:opacity .35s}
+  #stagectl button{backdrop-filter:blur(6px);background:rgba(25,28,40,.7)}
+
+  /* fullscreen behavior */
+  :fullscreen #topbar,:fullscreen #sidebar{display:none}
+  :fullscreen #stage{background:#000}
+  .hidecursor{cursor:none}
+
+  .seg-controls{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--txt-dim)}
+  .seg-controls input[type=range]{width:90px}
+  .drag-over{outline:3px dashed var(--accent);outline-offset:-8px}
+
+  /* ---- help modal ---- */
+  #helpOverlay{position:fixed;inset:0;background:rgba(0,0,0,.66);
+    display:none;align-items:center;justify-content:center;z-index:50;
+    backdrop-filter:blur(3px)}
+  #helpOverlay.show{display:flex}
+  #helpBox{background:var(--panel);border:1px solid var(--edge);border-radius:14px;
+    width:min(760px,92vw);max-height:86vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+  #helpBox header{position:sticky;top:0;background:linear-gradient(#1a1d2a,#141722);
+    border-bottom:1px solid var(--edge);padding:14px 20px;display:flex;
+    align-items:center;justify-content:space-between}
+  #helpBox header h2{margin:0;font-size:17px;color:var(--accent)}
+  #helpBox .body{padding:8px 22px 22px}
+  #helpBox h3{color:var(--txt);font-size:14px;margin:18px 0 6px;
+    border-bottom:1px solid var(--edge);padding-bottom:5px}
+  #helpBox p,#helpBox li{font-size:13.5px;line-height:1.55;color:var(--txt)}
+  #helpBox ul{margin:6px 0;padding-left:20px}
+  #helpBox code,#helpBox kbd{background:var(--panel2);border:1px solid var(--edge);
+    border-radius:5px;padding:1px 6px;font-size:12px;color:var(--accent2)}
+  #helpBox .muted{color:var(--txt-dim);font-size:12.5px}
+  #helpBox a{color:var(--accent)}
+  #helpClose{font-size:18px;line-height:1;padding:4px 12px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <span class="title">▮▮▮ STEREO EQ<span class="ver">v0.1</span></span>
+    <button id="playBtn" title="Play / Pause (Space)">▶ Play</button>
+    <button id="prevBtn" title="Previous station">⏮</button>
+    <button id="nextBtn" title="Next station">⏭</button>
+    <div class="seg-controls" title="Sensitivity / gain">
+      Gain <input id="gain" type="range" min="0.4" max="3" step="0.05" value="0.95">
+    </div>
+    <div class="seg-controls" title="Number of bars">
+      Bars <input id="bars" type="range" min="12" max="320" step="1" value="160">
+    </div>
+    <div class="seg-controls" title="Row density (blocks per bar)">
+      Rows <input id="rows" type="range" min="0.5" max="5" step="0.05" value="2.5">
+    </div>
+    <div class="seg-controls" title="Color brightness (per-display compensation)">
+      Bright <input id="bright" type="range" min="0.5" max="1.6" step="0.02" value="1">
+    </div>
+    <label class="seg-controls" title="Color theme">Theme
+      <select id="theme">
+        <option value="classic">Classic (G/Y/R)</option>
+        <option value="fire">Fire</option>
+        <option value="ice">Ice</option>
+        <option value="blue">Blue→White</option>
+        <option value="rainbow">Rainbow</option>
+        <option value="amber">Amber</option>
+        <option value="mono">Mono Green</option>
+        <option value="magma">Magma</option>
+      </select>
+    </label>
+    <label class="seg-controls" title="Color across bars (frequency) or by level (height)">Color by
+      <select id="coloraxis">
+        <option value="level">Level (height)</option>
+        <option value="bars">Bars (frequency)</option>
+      </select>
+    </label>
+    <div class="spacer"></div>
+    <span id="nowplaying">No station selected</span>
+    <button id="saveCfgBtn" title="Save settings + stations to a file">💾 Save</button>
+    <button id="loadCfgBtn" title="Load settings from a file">📂 Load</button>
+    <input id="cfgInput" type="file" accept=".json" hidden>
+    <button id="helpBtn" title="How it works / user guide">❓ How It Works</button>
+    <button id="fsBtn" title="Fullscreen (F)">⛶ Fullscreen</button>
+  </div>
+
+  <div id="main">
+    <div id="sidebar">
+      <h3 style="display:flex;align-items:center;justify-content:space-between;gap:6px">Stations
+        <span style="display:flex;gap:6px">
+          <label title="Hide stations that failed to load" style="display:flex;align-items:center;gap:3px;font-size:10px;text-transform:none;letter-spacing:0;color:var(--txt-dim);cursor:pointer"><input id="hideOffline" type="checkbox" style="cursor:pointer"> hide offline</label>
+          <button id="resetBtn" title="Reset to default stations" style="padding:3px 8px;font-size:11px">↺ Reset</button>
+        </span>
+      </h3>
+      <div id="genrefilter"></div>
+      <div id="stations"></div>
+      <div id="addrow">
+        <input id="urlInput" type="text" placeholder="Paste stream / .pls / .m3u URL…">
+        <button id="addBtn" title="Add / load">＋</button>
+        <button id="fileBtn" title="Open .pls or .m3u file">📁</button>
+        <input id="fileInput" type="file" accept=".pls,.m3u,.m3u8,.txt" multiple hidden>
+      </div>
+    </div>
+
+    <div id="stage">
+      <canvas id="viz"></canvas>
+      <div id="hint">
+        <div class="big">Pick a station and press Play</div>
+        <div>Drag a .pls/.m3u here • Double-click for fullscreen</div>
+      </div>
+      <div id="stagectl">
+        <button id="fsBtn2">⛶ Fullscreen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<audio id="audio" crossorigin="anonymous" preload="none"></audio>
+
+<!-- ---------- How It Works modal ---------- -->
+<div id="helpOverlay">
+  <div id="helpBox">
+    <header>
+      <h2>▮▮▮ STEREO EQ — How It Works <span style="font-size:11px;color:var(--txt-dim);font-weight:600">v0.1</span></h2>
+      <button id="helpClose" title="Close (Esc)">×</button>
+    </header>
+    <div class="body">
+      <p>A self-contained internet-radio player with a classic stereo-amp spectrum analyzer.
+         It streams the station <b>itself</b> and reads the audio's frequency data directly —
+         no plugins, no loopback cable, no install. Everything lives in this one HTML file.</p>
+
+      <h3>Getting started</h3>
+      <ul>
+        <li>Click a station in the left list, then press <b>▶ Play</b> (browsers need one click before audio can start).</li>
+        <li>Use <kbd>Space</kbd> to play/pause, <kbd>←</kbd>/<kbd>→</kbd> to change station, <kbd>F</kbd> for fullscreen.</li>
+        <li>Double-click the visualizer to go fullscreen; controls and cursor auto-hide.</li>
+      </ul>
+
+      <h3>Stations</h3>
+      <ul>
+        <li><b>Genre filter</b> (All / D&B / Lofi / Hip-Hop) narrows the list. Added streams are auto-sorted by name.</li>
+        <li><b>Add a stream:</b> paste a stream URL in the bottom box and click <b>＋</b>. Paste a <code>.pls</code>/<code>.m3u</code> URL, drag a playlist file onto the window, or use <b>📁</b>.</li>
+        <li><b>hide offline</b> drops stations that failed to load. A red dot + ⚠ marks a dead/unavailable stream — click it again to retry (these are community streams that go up and down).</li>
+        <li><b>↺ Reset</b> restores the built-in station list.</li>
+      </ul>
+
+      <h3>Visualizer controls</h3>
+      <ul>
+        <li><b>Gain</b> — sensitivity. Higher = taller bars.</li>
+        <li><b>Bars</b> — number of frequency columns (higher = finer resolution).</li>
+        <li><b>Rows</b> — LED block density per bar.</li>
+        <li><b>Bright</b> — color brightness, to match your display.</li>
+        <li><b>Theme</b> — color palette (Classic, Fire, Ice, Rainbow, etc.).</li>
+        <li><b>Color by</b> — <i>Level</i> colors each bar by height; <i>Bars</i> colors across the frequency spectrum.</li>
+      </ul>
+
+      <h3>Saving &amp; sharing</h3>
+      <ul>
+        <li>All settings and your station list <b>auto-save in this browser</b> — they're restored next time you open the file.</li>
+        <li><b>💾 Save</b> downloads <code>eq-settings.json</code> (controls <i>and</i> stations) as a backup or to share.</li>
+        <li><b>📂 Load</b> restores from that file. To share with a friend, send them this HTML file (and optionally your <code>eq-settings.json</code>).</li>
+      </ul>
+
+      <h3>Good to know</h3>
+      <ul>
+        <li class="muted">Some stations stream over <code>http://</code>. They work when you open this file directly (the normal way). If you ever host the page on <code>https://</code>, browsers block those — the <code>https</code> stations still work.</li>
+        <li class="muted">A station only drives the bars if its server allows cross-origin reads (all built-in stations are pre-verified).</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+//=====================================================================
+// Stereo EQ — single-file streaming spectrum analyzer
+//=====================================================================
+const $ = sel => document.querySelector(sel);
+const audio   = $('#audio');
+const canvas  = $('#viz');
+const ctx     = canvas.getContext('2d', { alpha:false });
+
+// ---------- default stations (CORS-verified D&B / jungle / liquid / neurofunk / lofi) ----------
+const DEFAULTS_VERSION = 5;
+const DEFAULT_STATIONS = [
+  // DNBRADIO
+  { name:'DNBRADIO — Main (MP3 US)',     url:'https://azura.drmnbss.org/listen/dnbradio/radio.mp3' },
+  { name:'DNBRADIO — Main (AAC US)',     url:'https://azrelay.drmnbss.org/listen/dnbradio/radio.aac' },
+  { name:'DNBRADIO — Main (MP3 NL)',     url:'https://dnbradio.nl/dnbradio_main.mp3' },
+  { name:'DNBRADIO — Plush Recordings',  url:'https://azura.drmnbss.org/listen/plushrecs/radio.mp3' },
+  { name:'DNBRADIO — Section 8',         url:'https://azura.drmnbss.org/listen/section8recs/radio.mp3' },
+  { name:'DNBRADIO — Darkstep',          url:'https://azura.drmnbss.org/listen/darkstep/radio.mp3' },
+  // Bassdrive
+  { name:'Bassdrive — Worldwide D&B',    url:'http://ice.bassdrive.net:80/stream' },
+  { name:'Bassdrive — Chicago',          url:'http://chi.bassdrive.co:80' },
+  { name:'Bassdrive — UK',               url:'http://stream.bassdrive.uk:8200' },
+  // Jungle / oldskool
+  { name:'Kool FM — Jungle/D&B (London)', url:'https://admin.stream.rinse.fm/proxy/kool/stream' },
+  { name:'Strictly Ragga Jungle',        url:'http://s6.citrus3.com:8526/stream' },
+  { name:'Energy 1058 — Jungle/Oldskool', url:'http://tachyon.shoutca.st:8590/stream' },
+  { name:'Eruption Radio — Oldskool/D&B', url:'http://streaming04.liveboxstream.uk:8116/stream' },
+  // Bass music stations
+  { name:'Sub FM',                       url:'https://subfm.radioca.st/' },
+  { name:'SWU FM',                       url:'https://admin.stream.rinse.fm/proxy/swu/stream' },
+  { name:'Kane FM',                      url:'http://stream.kanefm.com:1037/;stream' },
+  // Liquid / atmospheric
+  { name:'Atmospheric D&B (s0urce, AAC 320)', url:'https://brokenbeats.net/stream/aac' },
+  { name:'Brokenbeats — Tune',           url:'https://stream.brokenbeats.net/tune' },
+  { name:'Liquid DnB',                   url:'https://antares.dribbcast.com/proxy/dave1/stream/' },
+  { name:'Radio Record — Liquid Funk',   url:'https://radiorecord.hostingradio.ru/liquidfunk96.aacp' },
+  { name:'Dutch Delite — Drum & Bass',   url:'http://radio.dutchdelite.nl:8000/dnb' },
+  // Neurofunk / harder
+  { name:'WSSR — Sector Seven (Neuro)',  url:'https://broadcast.wssr.stream/radio/8000/radio.mp3' },
+  { name:'Back2Noize Radio',             url:'https://securestreams4.autopo.st:1558/Back2Noize' },
+  { name:'NR1 DNB Radio',                url:'https://radio.listen-nr1dnb.com/listen/nr1_dnb_radio/radio.mp3' },
+  { name:'DNB FM (RU)',                  url:'https://air.dnbfm.ru/listen/player/play' },
+  { name:'Sky Plus DnB',                 url:'https://edge03.cdn.bitflip.ee:8888/NRJdnb' },
+  { name:'Uturn Radio — Drum & Bass',    url:'http://listen.uturnradio.com/drum_and_bass' },
+  // Lofi / downtempo / chill
+  { name:'Nightwave Plaza — Vaporwave (OGG)', url:'https://radio.plaza.one/ogg' },
+  { name:'Nightwave Plaza — Vaporwave (MP3)', url:'http://radio.plaza.one/mp3' },
+  { name:'Lofi 24/7',                    url:'http://usa9.fastcast4u.com/proxy/jamz?mp=/1' },
+  { name:'Hunter.FM — Lo-Fi',            url:'https://live.hunter.fm/lofi_normal' },
+  { name:'NIA Radio — Lo-Fi (AAC)',      url:'https://radio.nia.nc/radio/8020/lofi-hq-stream.aac' },
+  { name:'BGMVibes — Lofi',              url:'https://radio.sutekihost.com/listen/bgmvibes/radio.mp3' },
+  { name:'ISEKOI — Chill Zone',          url:'https://public.isekoi-radio.com/listen/chill/radio.mp3' },
+  { name:'Radio Record — Lo-Fi',         url:'https://radiorecord.hostingradio.ru/lofi96.aacp' },
+  { name:'Radio Relax — Lo-Fi',          url:'https://radio8.dixi.md/listen/relax_lofi/relax_lofi128.aac' },
+  { name:'CalmFlow — Chillstep',         url:'https://stream.24dubstep.pl/listen/chillstep/mp3_normal' },
+  { name:'MonteCarlo Nights — Chill Lounge', url:'https://mc-chilllonge.hostingradio.ru/chilllonge96.aacp' },
+  { name:'hotmix — LoFi',                url:'https://streaming.hotmixradio.com/hotmix-lofi-en-mp3' },
+  { name:'b3cks Radio — Lofi',           url:'https://radio.b3ck.com/listen/b3cks-radio/radio.mp3' },
+  { name:'irvess — Lofi',                url:'https://irvess.com/stream/irvess' },
+  // Hip-Hop / Rap / Funk
+  { name:'FIP Hip Hop (France, AAC 192)', url:'http://icecast.radiofrance.fr/fiphiphop-hifi.aac', genre:'Hip-Hop' },
+  { name:'WEFUNK Radio — Hip-Hop/Funk',  url:'https://s-17.wefunkradio.com:8443/wefunk64.mp3', genre:'Hip-Hop' },
+  { name:'Radio Nova (France)',          url:'https://novazz.ice.infomaniak.ch/novazz-128.mp3', genre:'Hip-Hop' },
+  { name:'KISS XTRA — Black Music',      url:'https://live-bauerkiss.sharp-stream.com/kissfresh.aac?direct=true', genre:'Hip-Hop' },
+  { name:'Urban Radio — Hip-Hop / R&B',  url:'http://hydra.cdnstream.com/1536_128', genre:'Hip-Hop' },
+  { name:'GotRadio — Hip Hop Stop',      url:'http://pureplay.cdnstream1.com/6041_128.mp3', genre:'Hip-Hop' },
+  { name:'SUN Hip Hop (France)',         url:'https://diffusion.lafrap.fr/sun-hip-hop.mp3', genre:'Hip-Hop' },
+  { name:'SUN Soul & Funk',              url:'https://diffusion.lafrap.fr/sun-soul.funk.mp3', genre:'Hip-Hop' },
+  { name:'100% Hip Hop & RnB',           url:'https://streaming.shoutcast.com/100-hip-hop-and-rnb-fm', genre:'Hip-Hop' },
+  { name:'KEXP 90.3 Seattle (eclectic)', url:'http://live-mp3-128.kexp.org/kexp128.mp3', genre:'Hip-Hop' },
+  // Breakbeat / breaks
+  { name:'DFM — Breakbeat (Russia)',     url:'https://dfm-breakbeat.hostingradio.ru/breakbeat96.aacp', genre:'Breaks' },
+  { name:'RadioSpinner — Atmospheric Breaks', url:'https://tower.hayva.ru/5jwuo-96', genre:'Breaks' },
+  { name:'674FM (breaks/bass)',          url:'http://audio.674.fm/stream', genre:'Breaks' },
+  { name:'UPFront Radio (breaks)',       url:'http://uk1.streamingpulse.com:7091/;', genre:'Breaks' },
+  { name:'Renegade Radio (breaks/jungle)', url:'http://149.255.60.195:8085/stream', genre:'Breaks' },
+  { name:'NEU RADIO (breaks/eclectic)',  url:'https://nr9.newradio.it/proxy/ebaruffa?mp=/stream', genre:'Breaks' },
+  { name:'ADRN — Jungle & Breakbeat',    url:'http://abm22.com.au:8000/CONTAINER39', genre:'Breaks' },
+  { name:'Decibelia FM (breaks)',        url:'http://master.shoutcast.com:8000/decibelia', genre:'Breaks' },
+  // More D&B
+  { name:'Infrared.fm — D&B',            url:'https://carol.epichosts.co.uk:8232/live.mp3', genre:'D&B' },
+  { name:'Meiji Drums Radio — D&B',      url:'https://radio.meiji.industries/drums', genre:'D&B' },
+  { name:'Netil Radio (London)',         url:'https://netilradio.out.airtime.pro/netilradio_a', genre:'D&B' },
+];
+
+let stations = loadStations();
+let current  = -1;
+
+// ---------- Web Audio graph ----------
+let actx, srcNode, analyserL, analyserR, splitter, freqL, freqR;
+let audioReady = false;
+
+function initAudio(){
+  if (audioReady) return;
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  srcNode = actx.createMediaElementSource(audio);
+  splitter = actx.createChannelSplitter(2);
+  analyserL = actx.createAnalyser();
+  analyserR = actx.createAnalyser();
+  for (const a of [analyserL, analyserR]){
+    a.fftSize = 8192;
+    a.smoothingTimeConstant = 0.78;
+    a.minDecibels = -86;
+    a.maxDecibels = -22;
+  }
+  srcNode.connect(splitter);
+  splitter.connect(analyserL, 0);
+  splitter.connect(analyserR, 1);
+  srcNode.connect(actx.destination);       // also hear it
+  freqL = new Uint8Array(analyserL.frequencyBinCount);
+  freqR = new Uint8Array(analyserR.frequencyBinCount);
+  audioReady = true;
+}
+
+// ---------- station list rendering ----------
+const stationsEl = $('#stations');
+const GENRE_ORDER = ['D&B','Breaks','Lofi','Hip-Hop','Other'];
+let genreFilter = 'All';
+
+function stationGenre(s){
+  if (s.genre) return s.genre;
+  const n = ((s.name||'')+' '+(s.url||'')).toLowerCase();
+  if (/hip.?hop|hiphop|\brap\b|trap|boom.?bap|r&b|rnb|gangsta/.test(n)) return 'Hip-Hop';
+  if (/lofi|lo-fi|chill|downtempo|vaporwave|plaza|lounge|relax|calm|ambient/.test(n)) return 'Lofi';
+  if (/break ?beat|breaks|big beat|nu ?skool/.test(n)) return 'Breaks';
+  if (/jungle|ragga|oldskool|old skool|old-skool|liquid|atmospheric|brokenbeats|neuro|darkstep|sector seven|back2noize|wssr|dnb|d&b|drum|bass|dnbradio/.test(n)) return 'D&B';
+  return 'Other';
+}
+
+function renderGenreFilter(){
+  const counts = {};
+  stations.forEach(s=>{ const g=stationGenre(s); counts[g]=(counts[g]||0)+1; });
+  const present = GENRE_ORDER.filter(g=>counts[g]);
+  const bar = $('#genrefilter');
+  bar.innerHTML = '';
+  const mk = (label, key, n)=>{
+    const b = document.createElement('button');
+    b.className = (genreFilter===key ? 'active':'');
+    b.innerHTML = escapeHtml(label) + (n!=null ? `<span class="cnt">${n}</span>` : '');
+    b.addEventListener('click', ()=>{ genreFilter=key; renderStations(); });
+    bar.appendChild(b);
+  };
+  mk('All','All', stations.length);
+  present.forEach(g=> mk(g, g, counts[g]));
+}
+
+function renderStations(){
+  renderGenreFilter();
+  // if the active filter no longer matches any station, fall back to All
+  if (genreFilter!=='All' && !stations.some(s=>stationGenre(s)===genreFilter)) genreFilter='All';
+  stationsEl.innerHTML = '';
+  stations.forEach((s, i)=>{
+    if (genreFilter!=='All' && stationGenre(s)!==genreFilter) return;
+    if (HIDE_OFFLINE && stationStatus[s.url]==='error' && i!==current) return;
+    const el = document.createElement('div');
+    const st = stationStatus[s.url];
+    el.className = 'station' + (i===current ? ' active':'')
+      + (st==='error'?' err':'') + (st==='loading'?' loading':'');
+    el.dataset.url = s.url;
+    el.innerHTML = `<span class="dot"></span>
+      <div class="meta">
+        <div class="name">${escapeHtml(s.name||s.url)}</div>
+        <div class="sub">${escapeHtml(prettyUrl(s.url))}</div>
+      </div>
+      <button class="del" title="Remove">×</button>`;
+    el.addEventListener('click', e=>{
+      if (e.target.classList.contains('del')){ removeStation(i); e.stopPropagation(); return; }
+      playStation(i);
+    });
+    stationsEl.appendChild(el);
+  });
+}
+function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function prettyUrl(u){try{const x=new URL(u);return x.hostname+x.pathname;}catch{return u;}}
+
+// ---------- playback ----------
+const stationStatus = {};        // url -> 'loading' | 'ok' | 'error'
+let loadWatchdog = null;
+let retryCount = 0;
+
+function setStatus(url, st){
+  stationStatus[url] = st;
+  document.querySelectorAll('.station').forEach(el=>{
+    if (el.dataset.url===url){
+      el.classList.toggle('err', st==='error');
+      el.classList.toggle('loading', st==='loading');
+    }
+  });
+  if (HIDE_OFFLINE && st==='error') renderStations();   // drop it from the list live
+}
+
+async function playStation(i){
+  current = i;
+  retryCount = 0;
+  renderStations();
+  await connect(stations[i]);
+}
+
+async function connect(s){
+  clearTimeout(loadWatchdog);
+  $('#nowplaying').innerHTML = 'Connecting… <b>'+escapeHtml(s.name)+'</b>';
+  setStatus(s.url, 'loading');
+  initAudio();
+  try { await actx.resume(); } catch{}
+  audio.src = s.url;
+  audio.load();
+  // watchdog: if playback hasn't started within 12s, treat as a failure
+  loadWatchdog = setTimeout(()=> handleFailure(s, 'timed out'), 12000);
+  try { await audio.play(); }
+  catch(err){ handleFailure(s, err.message); }
+}
+
+function handleFailure(s, why){
+  clearTimeout(loadWatchdog);
+  if (current<0 || stations[current]!==s) return;   // user already moved on
+  if (retryCount < 1){                              // one automatic retry
+    retryCount++;
+    $('#nowplaying').innerHTML = 'Reconnecting… <b>'+escapeHtml(s.name)+'</b>';
+    setTimeout(()=>{ if(stations[current]===s) connect(s); }, 700);
+    return;
+  }
+  setStatus(s.url, 'error');
+  $('#nowplaying').innerHTML =
+    '<span style="color:var(--danger)">⚠ '+escapeHtml(s.name)+' unavailable ('+escapeHtml(why)+')</span>';
+}
+
+audio.addEventListener('playing', ()=>{
+  clearTimeout(loadWatchdog);
+  retryCount = 0;
+  $('#playBtn').textContent='⏸ Pause';
+  if (current>=0){
+    const s = stations[current];
+    setStatus(s.url, 'ok');
+    $('#nowplaying').innerHTML = '♪ <b>'+escapeHtml(s.name)+'</b>';
+    hideHint();
+  }
+});
+audio.addEventListener('pause', ()=> $('#playBtn').textContent='▶ Play');
+audio.addEventListener('error', ()=>{ if(current>=0) handleFailure(stations[current], 'stream error'); });
+
+function togglePlay(){
+  if (current < 0){ if(stations.length) playStation(0); return; }
+  if (audio.paused){ initAudio(); actx.resume(); audio.play(); $('#playBtn').textContent='⏸ Pause'; }
+  else { audio.pause(); $('#playBtn').textContent='▶ Play'; }
+}
+function nextStation(){ if(stations.length) playStation((current+1+stations.length)%stations.length); }
+function prevStation(){ if(stations.length) playStation((current-1+stations.length)%stations.length); }
+
+// ---------- add / load playlists ----------
+function addUrl(raw){
+  const url = raw.trim();
+  if (!url) return;
+  if (/\.(pls|m3u8?|txt)(\?|$)/i.test(url)){ loadPlaylistUrl(url); return; }
+  stations.push({ name:url, url });
+  saveStations(); renderStations();
+}
+async function loadPlaylistUrl(url){
+  try{
+    const res = await fetch(url);
+    const text = await res.text();
+    importPlaylist(text, url);
+  }catch(err){
+    alert('Could not fetch playlist (CORS or network):\n'+err.message+
+          '\n\nTip: download the .pls and use the 📁 button instead.');
+  }
+}
+function importPlaylist(text, srcName){
+  const items = parsePlaylist(text);
+  if (!items.length){ alert('No stream URLs found in that file.'); return; }
+  items.forEach(it=> stations.push(it));
+  saveStations(); renderStations();
+  $('#nowplaying').textContent = 'Added '+items.length+' station(s)';
+}
+function parsePlaylist(text){
+  const out = [];
+  const lines = text.split(/\r?\n/);
+  if (/\[playlist\]/i.test(text)){            // .pls
+    const files={}, titles={};
+    for (const ln of lines){
+      let m;
+      if ((m=ln.match(/^\s*File(\d+)\s*=\s*(.+)$/i)))  files[m[1]]=m[2].trim();
+      else if ((m=ln.match(/^\s*Title(\d+)\s*=\s*(.+)$/i))) titles[m[1]]=m[2].trim();
+    }
+    Object.keys(files).sort((a,b)=>a-b).forEach(k=>{
+      if (/^https?:\/\//i.test(files[k])) out.push({name:titles[k]||files[k], url:files[k]});
+    });
+  } else {                                     // .m3u / plain
+    let pendingName=null;
+    for (const ln of lines){
+      const t=ln.trim();
+      if (!t) continue;
+      if (t.startsWith('#EXTINF')){ const c=t.split(',',2); pendingName=c[1]?c[1].trim():null; continue; }
+      if (t.startsWith('#')) continue;
+      // a line may contain several space-separated URLs (bassdrive style)
+      const urls = t.split(/\s+/).filter(u=>/^https?:\/\//i.test(u));
+      urls.forEach((u,idx)=> out.push({name: (idx===0&&pendingName)?pendingName:u, url:u}));
+      pendingName=null;
+    }
+  }
+  return out;
+}
+function removeStation(i){
+  stations.splice(i,1);
+  if (current===i){ audio.pause(); current=-1; }
+  else if (current>i) current--;
+  saveStations(); renderStations();
+}
+function loadStations(){
+  try{
+    const s=JSON.parse(localStorage.getItem('eq_stations'));
+    if(Array.isArray(s)&&s.length){
+      // one-time merge: add any new default stations the user doesn't already have
+      const ver = parseInt(localStorage.getItem('eq_defaults_ver')||'1',10);
+      if (ver < DEFAULTS_VERSION){
+        const have = new Set(s.map(x=>x.url));
+        DEFAULT_STATIONS.forEach(d=>{ if(!have.has(d.url)) s.push(d); });
+        localStorage.setItem('eq_stations', JSON.stringify(s));
+        localStorage.setItem('eq_defaults_ver', String(DEFAULTS_VERSION));
+      }
+      return s;
+    }
+  }catch{}
+  localStorage.setItem('eq_defaults_ver', String(DEFAULTS_VERSION));
+  return DEFAULT_STATIONS.slice();
+}
+function saveStations(){ localStorage.setItem('eq_stations', JSON.stringify(stations)); persistSettings(); }
+function resetStations(){
+  if(!confirm('Reset the station list to the built-in defaults? Your custom stations will be removed.')) return;
+  stations = DEFAULT_STATIONS.slice();
+  current = -1; audio.pause();
+  localStorage.setItem('eq_defaults_ver', String(DEFAULTS_VERSION));
+  saveStations(); renderStations();
+}
+
+// ---------- settings persistence ----------
+const SETTINGS_FILE = 'eq-settings.json';   // auto-loaded if served over http://
+
+function gatherSettings(){
+  return {
+    version: 1,
+    gain: GAIN, bars: NBARS, rows: ROWDENS, bright: BRIGHT, theme: THEME,
+    coloraxis: COLORAXIS, hideOffline: HIDE_OFFLINE,
+    current,
+    stations
+  };
+}
+function applySettings(cfg, {withStations=true}={}){
+  if (!cfg || typeof cfg!=='object') return;
+  if (typeof cfg.gain==='number'){ GAIN=cfg.gain; $('#gain').value=GAIN; }
+  if (typeof cfg.bars==='number'){ NBARS=cfg.bars; $('#bars').value=NBARS; vals.length=0; }
+  if (typeof cfg.rows==='number'){ ROWDENS=cfg.rows; $('#rows').value=ROWDENS; }
+  if (typeof cfg.bright==='number'){ BRIGHT=cfg.bright; $('#bright').value=BRIGHT; }
+  if (typeof cfg.theme==='string' && THEMES[cfg.theme]){ THEME=cfg.theme; $('#theme').value=THEME; }
+  if (typeof cfg.coloraxis==='string'){ COLORAXIS=cfg.coloraxis; $('#coloraxis').value=COLORAXIS; }
+  if (typeof cfg.hideOffline==='boolean'){ HIDE_OFFLINE=cfg.hideOffline; $('#hideOffline').checked=HIDE_OFFLINE; }
+  if (withStations && Array.isArray(cfg.stations) && cfg.stations.length){
+    stations = cfg.stations.map(s=>({name:s.name||s.url, url:s.url, ...(s.genre?{genre:s.genre}:{})}));
+    localStorage.setItem('eq_stations', JSON.stringify(stations));
+    renderStations();
+  }
+}
+function persistSettings(){
+  try{ localStorage.setItem('eq_settings', JSON.stringify(gatherSettings())); }catch{}
+}
+function loadSettingsFromLocal(){
+  try{ const c=JSON.parse(localStorage.getItem('eq_settings')); if(c) applySettings(c,{withStations:false}); }catch{}
+}
+function downloadSettings(){
+  const blob = new Blob([JSON.stringify(gatherSettings(),null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = SETTINGS_FILE;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  $('#nowplaying').textContent = 'Saved '+SETTINGS_FILE+' (check Downloads)';
+}
+function loadSettingsFromFile(file){
+  const rd = new FileReader();
+  rd.onload = ()=>{ try{ applySettings(JSON.parse(rd.result)); persistSettings();
+    $('#nowplaying').textContent='Settings loaded from '+file.name; }
+    catch(e){ alert('Invalid settings file:\n'+e.message); } };
+  rd.readAsText(file);
+}
+async function tryAutoLoadSettings(){
+  // works when the folder is served over http(s); silently fails on file://
+  try{
+    const res = await fetch(SETTINGS_FILE, {cache:'no-store'});
+    if (!res.ok) return false;
+    const cfg = await res.json();
+    applySettings(cfg);
+    $('#nowplaying').textContent = 'Loaded '+SETTINGS_FILE;
+    return true;
+  }catch{ return false; }
+}
+
+// ---------- fullscreen ----------
+function toggleFullscreen(){
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen();
+}
+
+// ---------- visualizer ----------
+let NBARS = 160, GAIN = 0.95;
+let BRIGHT = 1.0;                       // color brightness multiplier (per-display)
+let COLORAXIS = 'level';                // 'level' = color by height, 'bars' = color by frequency
+let HIDE_OFFLINE = false;               // hide stations flagged as failed
+let ROWDENS = 2.5;                      // row-density multiplier (cells ~square at 1.0)
+let NSEGS = 22;                         // LED blocks per bar (recomputed each frame)
+const peaks = [];                       // peak-hold per bar
+const vals  = [];                       // smoothed bar value per bar
+let barFreqEdges = [];
+
+function computeRows(W,H){
+  // keep cells roughly square: rows ~= height / cellWidth, scaled by density
+  const cellW = W/NBARS;
+  let n = Math.round((H/cellW) * ROWDENS);
+  return Math.max(8, Math.min(400, n));
+}
+
+function computeEdges(nbars, binCount, sampleRate){
+  // log-spaced from 35 Hz to 16 kHz, mapped to FFT bin indices
+  const fMin=35, fMax=16000;
+  const nyq = sampleRate/2;
+  barFreqEdges = [];
+  for (let i=0;i<=nbars;i++){
+    const f = fMin * Math.pow(fMax/fMin, i/nbars);
+    barFreqEdges.push(Math.min(binCount-1, Math.max(0, Math.round(f/nyq*binCount))));
+  }
+}
+
+function resize(){
+  const r = canvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio||1, 2);
+  canvas.width  = Math.max(1, Math.floor(r.width*dpr));
+  canvas.height = Math.max(1, Math.floor(r.height*dpr));
+}
+window.addEventListener('resize', resize);
+
+function bandValue(freq, lo, hi){
+  let max=0;
+  for (let b=lo;b<=hi;b++) if (freq[b]>max) max=freq[b];
+  return max/255;
+}
+
+function draw(){
+  requestAnimationFrame(draw);
+  const W=canvas.width, H=canvas.height;
+
+  // background: black bottom -> dark navy top (classic amp look)
+  const bg = ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#0b0d1a'); bg.addColorStop(1,'#000000');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
+
+  if (!audioReady || audio.paused){
+    // idle: draw a faint baseline of empty cells
+    drawGrid(W,H);
+    return;
+  }
+  analyserL.getByteFrequencyData(freqL);
+  analyserR.getByteFrequencyData(freqR);
+
+  NSEGS = computeRows(W,H);
+
+  if (vals.length!==NBARS){ vals.length=0; peaks.length=0;
+    for(let i=0;i<NBARS;i++){vals[i]=0;peaks[i]=0;}
+    computeEdges(NBARS, analyserL.frequencyBinCount, actx.sampleRate); }
+
+  const colW = W/NBARS;
+  const gap = Math.max(1, Math.floor(colW*0.16));
+  const segGapY = Math.max(2, Math.floor(H/NSEGS*0.18));
+  const segH = (H/NSEGS);
+
+  for (let i=0;i<NBARS;i++){
+    const lo=barFreqEdges[i], hi=Math.max(barFreqEdges[i],barFreqEdges[i+1]-1);
+    let vL=bandValue(freqL,lo,hi), vR=bandValue(freqR,lo,hi);
+    let target = (vL+vR)*0.5;
+    // perceptual lift for highs + gain
+    target = Math.min(1, Math.pow(target,0.92)*GAIN*(1+ i/NBARS*0.35));
+
+    // attack fast, release slow
+    if (target>vals[i]) vals[i]=vals[i]*0.4+target*0.6;
+    else vals[i]=vals[i]*0.82+target*0.18;
+    const h = vals[i];
+
+    // peak hold
+    if (h>peaks[i]) peaks[i]=h; else peaks[i]=Math.max(0, peaks[i]-0.012);
+
+    const x = i*colW + gap*0.5;
+    const bw = colW - gap;
+    const litSegs = Math.round(h*NSEGS);
+    const barColT = (NBARS>1) ? i/(NBARS-1) : 0.5;   // 0..1 across frequency
+
+    for (let s=0;s<NSEGS;s++){
+      const t=(s+0.5)/NSEGS;                       // 0 bottom .. 1 top
+      const yTop = H - (s+1)*segH + segGapY*0.5;
+      const cellH = segH - segGapY;
+      if (s<litSegs){
+        ctx.fillStyle = segColor(COLORAXIS==='bars' ? barColT : t, 1);
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.035)';  // unlit cell ghost
+      }
+      ctx.fillRect(x, yTop, bw, cellH);
+    }
+    // peak cap (bright block)
+    const capSeg = Math.min(NSEGS-1, Math.floor(peaks[i]*NSEGS));
+    if (peaks[i]>0.02){
+      const yTop = H - (capSeg+1)*segH + segGapY*0.5;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x, yTop, bw, segH-segGapY);
+    }
+  }
+}
+
+function hsv2rgb(h,s,v){
+  h=(h%1+1)%1; const i=Math.floor(h*6), f=h*6-i;
+  const p=v*(1-s), q=v*(1-f*s), t=v*(1-(1-f)*s);
+  let r,g,b;
+  switch(i%6){case 0:r=v;g=t;b=p;break;case 1:r=q;g=v;b=p;break;case 2:r=p;g=v;b=t;break;
+    case 3:r=p;g=q;b=v;break;case 4:r=t;g=p;b=v;break;default:r=v;g=p;b=q;}
+  return [r*255,g*255,b*255];
+}
+const THEMES = {
+  classic: t=>{ let r,g,b;
+    if(t<0.55){r=40+t/0.55*120;g=230;b=40;}
+    else if(t<0.8){const u=(t-0.55)/0.25;r=160+u*95;g=230-u*25;b=20;}
+    else{const u=(t-0.8)/0.2;r=255;g=205-u*195;b=10;} return [r,g,b]; },
+  fire:    t=> [255, Math.min(255,60+t*230), t*t*60],
+  ice:     t=> [40+t*120, 140+t*115, 230],
+  blue:    t=>{ const u=Math.min(1,t*1.2); return [u*u*255, 120+u*135, 255]; },
+  rainbow: t=> hsv2rgb(0.66-0.66*t, 0.9, 1.0),     // blue(low)->red(high)
+  amber:   t=> [255, 120+t*110, 10+t*30],
+  mono:    t=> [40+t*60, 200+t*55, 40+t*40],
+  magma:   t=> hsv2rgb(0.95-0.12*t, 0.85-0.45*t, 0.5+0.5*t),
+};
+let THEME = 'classic';
+function segColor(t, a){
+  const c = (THEMES[THEME]||THEMES.classic)(t);
+  const r=Math.min(255,Math.round(c[0]*BRIGHT));
+  const g=Math.min(255,Math.round(c[1]*BRIGHT));
+  const b=Math.min(255,Math.round(c[2]*BRIGHT));
+  return `rgba(${r},${g},${b},${a})`;
+}
+
+function drawGrid(W,H){
+  const nbars=NBARS;
+  NSEGS = computeRows(W,H);
+  const colW=W/nbars, gap=Math.max(1,Math.floor(colW*0.16));
+  const segGapY=Math.max(2,Math.floor(H/NSEGS*0.18)), segH=H/NSEGS;
+  ctx.fillStyle='rgba(255,255,255,0.03)';
+  for(let i=0;i<nbars;i++){
+    const x=i*colW+gap*0.5, bw=colW-gap;
+    for(let s=0;s<NSEGS;s++){
+      const yTop=H-(s+1)*segH+segGapY*0.5;
+      ctx.fillRect(x,yTop,bw,segH-segGapY);
+    }
+  }
+}
+
+// ---------- UI wiring ----------
+$('#playBtn').addEventListener('click', togglePlay);
+$('#nextBtn').addEventListener('click', nextStation);
+$('#prevBtn').addEventListener('click', prevStation);
+$('#fsBtn').addEventListener('click', toggleFullscreen);
+$('#fsBtn2').addEventListener('click', toggleFullscreen);
+const helpOverlay = $('#helpOverlay');
+function openHelp(){ helpOverlay.classList.add('show'); }
+function closeHelp(){ helpOverlay.classList.remove('show'); }
+$('#helpBtn').addEventListener('click', openHelp);
+$('#helpClose').addEventListener('click', closeHelp);
+helpOverlay.addEventListener('click', e=>{ if(e.target===helpOverlay) closeHelp(); });
+$('#addBtn').addEventListener('click', ()=>{ addUrl($('#urlInput').value); $('#urlInput').value=''; });
+$('#urlInput').addEventListener('keydown', e=>{ if(e.key==='Enter'){ addUrl($('#urlInput').value); $('#urlInput').value=''; }});
+$('#fileBtn').addEventListener('click', ()=> $('#fileInput').click());
+$('#fileInput').addEventListener('change', e=>{
+  [...e.target.files].forEach(f=>{ const rd=new FileReader(); rd.onload=()=>importPlaylist(rd.result,f.name); rd.readAsText(f); });
+  e.target.value='';
+});
+$('#gain').addEventListener('input', e=>{ GAIN=parseFloat(e.target.value); persistSettings(); });
+$('#bars').addEventListener('input', e=>{ NBARS=parseInt(e.target.value); vals.length=0; persistSettings(); });
+$('#rows').addEventListener('input', e=>{ ROWDENS=parseFloat(e.target.value); persistSettings(); });
+$('#bright').addEventListener('input', e=>{ BRIGHT=parseFloat(e.target.value); persistSettings(); });
+$('#theme').addEventListener('change', e=>{ THEME=e.target.value; persistSettings(); });
+$('#coloraxis').addEventListener('change', e=>{ COLORAXIS=e.target.value; persistSettings(); });
+$('#hideOffline').addEventListener('change', e=>{ HIDE_OFFLINE=e.target.checked; persistSettings(); renderStations(); });
+
+$('#saveCfgBtn').addEventListener('click', downloadSettings);
+$('#loadCfgBtn').addEventListener('click', ()=> $('#cfgInput').click());
+$('#cfgInput').addEventListener('change', e=>{ if(e.target.files[0]) loadSettingsFromFile(e.target.files[0]); e.target.value=''; });
+$('#resetBtn').addEventListener('click', resetStations);
+
+$('#stage').addEventListener('dblclick', toggleFullscreen);
+
+// drag & drop playlists anywhere
+window.addEventListener('dragover', e=>{ e.preventDefault(); document.body.classList.add('drag-over'); });
+window.addEventListener('dragleave', e=>{ if(e.target===document.documentElement) document.body.classList.remove('drag-over'); });
+window.addEventListener('drop', e=>{
+  e.preventDefault(); document.body.classList.remove('drag-over');
+  const f=e.dataTransfer.files[0];
+  if(f){ const rd=new FileReader(); rd.onload=()=>importPlaylist(rd.result,f.name); rd.readAsText(f); }
+  else { const u=e.dataTransfer.getData('text'); if(u) addUrl(u); }
+});
+
+// keyboard
+document.addEventListener('keydown', e=>{
+  if (e.key==='Escape' && helpOverlay.classList.contains('show')){ closeHelp(); return; }
+  if (e.target.tagName==='INPUT') return;
+  if (e.key===' '){ e.preventDefault(); togglePlay(); }
+  else if (e.key==='f'||e.key==='F') toggleFullscreen();
+  else if (e.key==='ArrowRight') nextStation();
+  else if (e.key==='ArrowLeft') prevStation();
+});
+
+// auto-hide cursor/controls in fullscreen
+let cursorTimer;
+document.addEventListener('mousemove', ()=>{
+  document.body.classList.remove('hidecursor');
+  $('#stagectl').style.opacity='1';
+  clearTimeout(cursorTimer);
+  if (document.fullscreenElement) cursorTimer=setTimeout(()=>{
+    document.body.classList.add('hidecursor'); $('#stagectl').style.opacity='0';
+  },2200);
+});
+function hideHint(){ $('#hint').style.opacity='0'; }
+
+// ---------- boot ----------
+loadSettingsFromLocal();      // restore last-used settings (no clicks)
+renderStations();
+resize();
+draw();
+tryAutoLoadSettings();        // override from eq-settings.json if served over http://
+</script>
+</body>
+</html>
