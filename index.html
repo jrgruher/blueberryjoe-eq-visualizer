@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Stereo EQ — Streaming Spectrum Analyzer</title>
+<title>BlueberryEQ — Streaming Spectrum Analyzer</title>
 <style>
   :root{
     --bg:#0a0b10; --panel:#12141d; --panel2:#191c28; --edge:#2a2f42;
@@ -130,7 +130,7 @@
 <body>
 <div id="app">
   <div id="topbar">
-    <span class="title">▮▮▮ STEREO EQ<span class="ver">v0.1</span></span>
+    <span class="title">🫐 BlueberryEQ<span class="ver">v0.1</span></span>
     <button id="playBtn" title="Play / Pause (Space)">▶ Play</button>
     <button id="prevBtn" title="Previous station">⏮</button>
     <button id="nextBtn" title="Next station">⏭</button>
@@ -210,7 +210,7 @@
 <div id="helpOverlay">
   <div id="helpBox">
     <header>
-      <h2>▮▮▮ STEREO EQ — How It Works <span style="font-size:11px;color:var(--txt-dim);font-weight:600">v0.1</span></h2>
+      <h2>🫐 BlueberryEQ — How It Works <span style="font-size:11px;color:var(--txt-dim);font-weight:600">v0.1</span></h2>
       <button id="helpClose" title="Close (Esc)">×</button>
     </header>
     <div class="body">
@@ -261,7 +261,7 @@
 
 <script>
 //=====================================================================
-// Stereo EQ — single-file streaming spectrum analyzer
+// BlueberryEQ — single-file streaming spectrum analyzer
 //=====================================================================
 const $ = sel => document.querySelector(sel);
 const audio   = $('#audio');
@@ -269,7 +269,7 @@ const canvas  = $('#viz');
 const ctx     = canvas.getContext('2d', { alpha:false });
 
 // ---------- default stations (CORS-verified D&B / jungle / liquid / neurofunk / lofi) ----------
-const DEFAULTS_VERSION = 5;
+const DEFAULTS_VERSION = 7;
 const DEFAULT_STATIONS = [
   // DNBRADIO
   { name:'DNBRADIO — Main (MP3 US)',     url:'https://azura.drmnbss.org/listen/dnbradio/radio.mp3' },
@@ -288,9 +288,9 @@ const DEFAULT_STATIONS = [
   { name:'Energy 1058 — Jungle/Oldskool', url:'http://tachyon.shoutca.st:8590/stream' },
   { name:'Eruption Radio — Oldskool/D&B', url:'http://streaming04.liveboxstream.uk:8116/stream' },
   // Bass music stations
-  { name:'Sub FM',                       url:'https://subfm.radioca.st/' },
-  { name:'SWU FM',                       url:'https://admin.stream.rinse.fm/proxy/swu/stream' },
-  { name:'Kane FM',                      url:'http://stream.kanefm.com:1037/;stream' },
+  { name:'Sub FM',                       url:'https://subfm.radioca.st/', genre:'D&B' },
+  { name:'SWU FM',                       url:'https://admin.stream.rinse.fm/proxy/swu/stream', genre:'D&B' },
+  { name:'Kane FM',                      url:'http://stream.kanefm.com:1037/;stream', genre:'D&B' },
   // Liquid / atmospheric
   { name:'Atmospheric D&B (s0urce, AAC 320)', url:'https://brokenbeats.net/stream/aac' },
   { name:'Brokenbeats — Tune',           url:'https://stream.brokenbeats.net/tune' },
@@ -343,6 +343,20 @@ const DEFAULT_STATIONS = [
   { name:'Infrared.fm — D&B',            url:'https://carol.epichosts.co.uk:8232/live.mp3', genre:'D&B' },
   { name:'Meiji Drums Radio — D&B',      url:'https://radio.meiji.industries/drums', genre:'D&B' },
   { name:'Netil Radio (London)',         url:'https://netilradio.out.airtime.pro/netilradio_a', genre:'D&B' },
+  { name:'Rinse FM (London)',            url:'https://admin.stream.rinse.fm/proxy/rinse_uk/stream', genre:'D&B' },
+  { name:'RES (320k)',                   url:'https://res.lirz.ru/listen/res/radio.mp3', genre:'D&B' },
+  { name:'drumbase.space',               url:'https://radio.drumbase.space/listen/drumbase.space/radio.mp3', genre:'D&B' },
+  { name:'Playback UK',                  url:'https://chilledstreaming.com:8650/mobile.mp3', genre:'D&B' },
+  { name:'Oldskool UK',                  url:'https://usa10.fastcast4u.com:8880/', genre:'D&B' },
+  // Bass music (dubstep / riddim / future bass / garage / trap)
+  { name:'SomaFM — Dub Step Beyond (256k)', url:'https://ice6.somafm.com/dubstep-256-mp3', genre:'Bass' },
+  { name:'SomaFM — Dub Step Beyond (128k)', url:'https://ice2.somafm.com/dubstep-128-mp3', genre:'Bass' },
+  { name:'Radio Record — Future Bass',  url:'https://radiorecord.hostingradio.ru/fbass96.aacp', genre:'Bass' },
+  { name:'Radio Record — UK Garage',    url:'https://radiorecord.hostingradio.ru/ukgarage96.aacp', genre:'Bass' },
+  { name:'Uturn Radio — Dubstep',        url:'http://listen.uturnradio.com/dubstep_32', genre:'Bass' },
+  { name:'PulseEDM — Dubstep/Bass',      url:'http://pulseedm.cdnstream1.com:8124/1373_128', genre:'Bass' },
+  { name:'ADRN — UK Garage',             url:'http://abm22.com.au:8000/CONTAINER15', genre:'Bass' },
+  { name:'dr_dick\'s dub shack',          url:'https://streamer.radio.co/s0635c8b0d/listen', genre:'Bass' },
 ];
 
 let stations = loadStations();
@@ -376,15 +390,16 @@ function initAudio(){
 
 // ---------- station list rendering ----------
 const stationsEl = $('#stations');
-const GENRE_ORDER = ['D&B','Breaks','Lofi','Hip-Hop','Other'];
+const GENRE_ORDER = ['D&B','Breaks','Bass','Lofi','Hip-Hop','Other'];
 let genreFilter = 'All';
 
 function stationGenre(s){
   if (s.genre) return s.genre;
   const n = ((s.name||'')+' '+(s.url||'')).toLowerCase();
-  if (/hip.?hop|hiphop|\brap\b|trap|boom.?bap|r&b|rnb|gangsta/.test(n)) return 'Hip-Hop';
+  if (/hip.?hop|hiphop|\brap\b|boom.?bap|r&b|rnb|gangsta/.test(n)) return 'Hip-Hop';
   if (/lofi|lo-fi|chill|downtempo|vaporwave|plaza|lounge|relax|calm|ambient/.test(n)) return 'Lofi';
   if (/break ?beat|breaks|big beat|nu ?skool/.test(n)) return 'Breaks';
+  if (/dubstep|riddim|brostep|future bass|bass house|bass music|glitch ?hop|\btrap\b|grime|uk garage|ukg|\bgarage\b/.test(n)) return 'Bass';
   if (/jungle|ragga|oldskool|old skool|old-skool|liquid|atmospheric|brokenbeats|neuro|darkstep|sector seven|back2noize|wssr|dnb|d&b|drum|bass|dnbradio/.test(n)) return 'D&B';
   return 'Other';
 }
