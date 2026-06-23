@@ -82,8 +82,11 @@
   .station.loading .dot{background:var(--accent2);
     animation:pulse 1s ease-in-out infinite}
   @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
-  #addrow{padding:10px;border-top:1px solid var(--edge);display:flex;gap:6px}
-  #addrow input{min-width:0}
+  #addrow{padding:10px;border-top:1px solid var(--edge);display:flex;
+    flex-direction:column;gap:8px}
+  #addrow > input[type=text]{min-width:0;width:100%}
+  #addbtns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  #addbtns button{padding:7px 8px;font-size:12px}
 
   /* ---- visualizer ---- */
   #stage{flex:1;position:relative;min-width:0;background:#05060a}
@@ -125,6 +128,13 @@
   #helpBox .muted{color:var(--txt-dim);font-size:12.5px}
   #helpBox a{color:var(--accent)}
   #helpClose{font-size:18px;line-height:1;padding:4px 12px}
+
+  /* on-screen display (fullscreen hotkey feedback) */
+  #osd{position:absolute;left:50%;top:18px;transform:translateX(-50%);
+    background:rgba(10,12,18,.85);border:1px solid var(--edge);border-radius:10px;
+    padding:8px 18px;font-size:15px;font-weight:600;color:var(--txt);opacity:0;
+    pointer-events:none;transition:opacity .18s;z-index:20;white-space:nowrap}
+  #osd.show{opacity:1}
 </style>
 </head>
 <body>
@@ -134,6 +144,9 @@
     <button id="playBtn" title="Play / Pause (Space)">▶ Play</button>
     <button id="prevBtn" title="Previous station">⏮</button>
     <button id="nextBtn" title="Next station">⏭</button>
+    <div class="seg-controls" title="Volume (↑ / ↓)">
+      Vol <input id="vol" type="range" min="0" max="1" step="0.01" value="1">
+    </div>
     <div class="seg-controls" title="Sensitivity / gain">
       Gain <input id="gain" type="range" min="0.4" max="3" step="0.05" value="0.95">
     </div>
@@ -164,6 +177,7 @@
         <option value="bars">Bars (frequency)</option>
       </select>
     </label>
+    <button id="resetViewBtn" title="Reset bars, rows, gain, brightness, theme to defaults">⟳ Reset View</button>
     <div class="spacer"></div>
     <span id="nowplaying">No station selected</span>
     <button id="saveCfgBtn" title="Save settings + stations to a file">💾 Save</button>
@@ -185,14 +199,20 @@
       <div id="stations"></div>
       <div id="addrow">
         <input id="urlInput" type="text" placeholder="Paste stream / .pls / .m3u URL…">
-        <button id="addBtn" title="Add / load">＋</button>
-        <button id="fileBtn" title="Open .pls or .m3u file">📁</button>
+        <div id="addbtns">
+          <button id="addBtn" title="Add the pasted stream / playlist URL">＋ Add</button>
+          <button id="fileBtn" title="Open a .pls or .m3u file">📁 Open</button>
+          <button id="importStationsBtn" title="Import station list from a JSON file">⬇ Import</button>
+          <button id="exportStationsBtn" title="Export station list to a JSON file">⬆ Export</button>
+        </div>
         <input id="fileInput" type="file" accept=".pls,.m3u,.m3u8,.txt" multiple hidden>
+        <input id="stationsImportInput" type="file" accept=".json" hidden>
       </div>
     </div>
 
     <div id="stage">
       <canvas id="viz"></canvas>
+      <div id="osd"></div>
       <div id="hint">
         <div class="big">Pick a station and press Play</div>
         <div>Drag a .pls/.m3u here • Double-click for fullscreen</div>
@@ -225,17 +245,28 @@
         <li>Double-click the visualizer to go fullscreen; controls and cursor auto-hide.</li>
       </ul>
 
+      <h3>Hotkeys</h3>
+      <ul>
+        <li><kbd>Space</kbd> play/pause · <kbd>←</kbd>/<kbd>→</kbd> change station · <kbd>F</kbd> fullscreen</li>
+        <li><kbd>↑</kbd>/<kbd>↓</kbd> volume · <kbd>+</kbd>/<kbd>-</kbd> gain</li>
+        <li><kbd>[</kbd>/<kbd>]</kbd> bars · <kbd>{</kbd>/<kbd>}</kbd> rows · <kbd>,</kbd>/<kbd>.</kbd> brightness</li>
+        <li><kbd>t</kbd>/<kbd>T</kbd> cycle theme · <kbd>c</kbd> color mode · <kbd>r</kbd> reset view</li>
+        <li class="muted">All hotkeys work in fullscreen — a small label shows the change.</li>
+      </ul>
+
       <h3>Stations</h3>
       <ul>
         <li><b>Genre filter</b> (All / D&B / Lofi / Hip-Hop) narrows the list. Added streams are auto-sorted by name.</li>
         <li><b>Add a stream:</b> paste a stream URL in the bottom box and click <b>＋</b>. Paste a <code>.pls</code>/<code>.m3u</code> URL, drag a playlist file onto the window, or use <b>📁</b>.</li>
         <li><b>hide offline</b> drops stations that failed to load. A red dot + ⚠ marks a dead/unavailable stream — click it again to retry (these are community streams that go up and down).</li>
         <li><b>↺ Reset</b> restores the built-in station list.</li>
+        <li><b>⬆ / ⬇</b> export or import just your station list as a JSON file (import can replace or merge).</li>
       </ul>
 
       <h3>Visualizer controls</h3>
       <ul>
-        <li><b>Gain</b> — sensitivity. Higher = taller bars.</li>
+        <li><b>Vol</b> — audio output volume (separate from Gain).</li>
+        <li><b>Gain</b> — visual sensitivity. Higher = taller bars.</li>
         <li><b>Bars</b> — number of frequency columns (higher = finer resolution).</li>
         <li><b>Rows</b> — LED block density per bar.</li>
         <li><b>Bright</b> — color brightness, to match your display.</li>
@@ -616,7 +647,7 @@ function gatherSettings(){
   return {
     version: 1,
     gain: GAIN, bars: NBARS, rows: ROWDENS, bright: BRIGHT, theme: THEME,
-    coloraxis: COLORAXIS, hideOffline: HIDE_OFFLINE,
+    coloraxis: COLORAXIS, hideOffline: HIDE_OFFLINE, volume: VOL,
     current,
     stations
   };
@@ -627,6 +658,7 @@ function applySettings(cfg, {withStations=true}={}){
   if (typeof cfg.bars==='number'){ NBARS=cfg.bars; $('#bars').value=NBARS; vals.length=0; }
   if (typeof cfg.rows==='number'){ ROWDENS=cfg.rows; $('#rows').value=ROWDENS; }
   if (typeof cfg.bright==='number'){ BRIGHT=cfg.bright; $('#bright').value=BRIGHT; }
+  if (typeof cfg.volume==='number'){ VOL=cfg.volume; $('#vol').value=VOL; audio.volume=VOL; }
   if (typeof cfg.theme==='string' && THEMES[cfg.theme]){ THEME=cfg.theme; $('#theme').value=THEME; }
   if (typeof cfg.coloraxis==='string'){ COLORAXIS=cfg.coloraxis; $('#coloraxis').value=COLORAXIS; }
   if (typeof cfg.hideOffline==='boolean'){ HIDE_OFFLINE=cfg.hideOffline; $('#hideOffline').checked=HIDE_OFFLINE; }
@@ -658,6 +690,40 @@ function loadSettingsFromFile(file){
     catch(e){ alert('Invalid settings file:\n'+e.message); } };
   rd.readAsText(file);
 }
+
+// ---------- station list export / import (stations only) ----------
+function downloadBlob(obj, filename){
+  const blob = new Blob([JSON.stringify(obj,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+function exportStations(){
+  downloadBlob({ type:'blueberryeq-stations', stations }, 'blueberryeq-stations.json');
+  $('#nowplaying').textContent = 'Exported '+stations.length+' stations (check Downloads)';
+}
+function importStationsFile(file){
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    try{
+      const data = JSON.parse(rd.result);
+      const list = Array.isArray(data) ? data : (data.stations||[]);
+      if (!Array.isArray(list) || !list.length){ alert('No stations found in that file.'); return; }
+      const replace = confirm('Import '+list.length+' stations.\n\nOK = REPLACE your current list\nCancel = MERGE (add new ones only)');
+      if (replace){
+        stations = list.map(s=>({name:s.name||s.url, url:s.url, ...(s.genre?{genre:s.genre}:{})}));
+      } else {
+        const have = new Set(stations.map(s=>s.url));
+        let added=0;
+        list.forEach(s=>{ if(s.url && !have.has(s.url)){ stations.push({name:s.name||s.url, url:s.url, ...(s.genre?{genre:s.genre}:{})}); added++; } });
+        $('#nowplaying').textContent = 'Merged '+added+' new station(s)';
+      }
+      saveStations(); renderStations();
+    }catch(e){ alert('Invalid stations file:\n'+e.message); }
+  };
+  rd.readAsText(file);
+}
 async function tryAutoLoadSettings(){
   // works when the folder is served over http(s); silently fails on file://
   try{
@@ -678,6 +744,7 @@ function toggleFullscreen(){
 
 // ---------- visualizer ----------
 let NBARS = 160, GAIN = 0.95;
+let VOL = 1.0;                          // audio output volume (0..1)
 let BRIGHT = 1.0;                       // color brightness multiplier (per-display)
 let COLORAXIS = 'level';                // 'level' = color by height, 'bars' = color by frequency
 let HIDE_OFFLINE = false;               // hide stations flagged as failed
@@ -686,6 +753,36 @@ let NSEGS = 22;                         // LED blocks per bar (recomputed each f
 const peaks = [];                       // peak-hold per bar
 const vals  = [];                       // smoothed bar value per bar
 let barFreqEdges = [];
+
+const VIEW_DEFAULTS = { gain:0.95, bars:160, rows:2.5, bright:1.0, theme:'classic', coloraxis:'level' };
+function resetView(){
+  GAIN=VIEW_DEFAULTS.gain; NBARS=VIEW_DEFAULTS.bars; ROWDENS=VIEW_DEFAULTS.rows;
+  BRIGHT=VIEW_DEFAULTS.bright; THEME=VIEW_DEFAULTS.theme; COLORAXIS=VIEW_DEFAULTS.coloraxis;
+  $('#gain').value=GAIN; $('#bars').value=NBARS; $('#rows').value=ROWDENS;
+  $('#bright').value=BRIGHT; $('#theme').value=THEME; $('#coloraxis').value=COLORAXIS;
+  vals.length=0;
+  persistSettings();
+  showOSD('View reset');
+}
+
+// on-screen display for hotkey feedback (visible in fullscreen)
+let osdTimer;
+function showOSD(text){
+  const el=$('#osd'); if(!el) return;
+  el.textContent=text; el.classList.add('show');
+  clearTimeout(osdTimer); osdTimer=setTimeout(()=>el.classList.remove('show'), 1100);
+}
+const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+
+// control setters (used by both sliders and hotkeys)
+function setVol(v,osd){ VOL=clamp(v,0,1); audio.volume=VOL; $('#vol').value=VOL; persistSettings(); if(osd) showOSD('Volume '+Math.round(VOL*100)+'%'); }
+function setGain(v,osd){ GAIN=clamp(v,0.4,3); $('#gain').value=GAIN; persistSettings(); if(osd) showOSD('Gain '+GAIN.toFixed(2)); }
+function setBars(v,osd){ NBARS=clamp(Math.round(v),12,320); $('#bars').value=NBARS; vals.length=0; persistSettings(); if(osd) showOSD('Bars '+NBARS); }
+function setRows(v,osd){ ROWDENS=clamp(v,0.5,5); $('#rows').value=ROWDENS; persistSettings(); if(osd) showOSD('Rows '+ROWDENS.toFixed(2)); }
+function setBright(v,osd){ BRIGHT=clamp(v,0.5,1.6); $('#bright').value=BRIGHT; persistSettings(); if(osd) showOSD('Bright '+BRIGHT.toFixed(2)); }
+const THEME_KEYS=['classic','fire','ice','blue','rainbow','amber','mono','magma'];
+function cycleTheme(dir,osd){ let i=THEME_KEYS.indexOf(THEME); i=(i+dir+THEME_KEYS.length)%THEME_KEYS.length; THEME=THEME_KEYS[i]; $('#theme').value=THEME; persistSettings(); if(osd) showOSD('Theme: '+THEME); }
+function toggleColorAxis(osd){ COLORAXIS = (COLORAXIS==='level')?'bars':'level'; $('#coloraxis').value=COLORAXIS; persistSettings(); if(osd) showOSD('Color by '+(COLORAXIS==='bars'?'frequency':'level')); }
 
 function computeRows(W,H){
   // keep cells roughly square: rows ~= height / cellWidth, scaled by density
@@ -853,12 +950,22 @@ $('#fileInput').addEventListener('change', e=>{
   e.target.value='';
 });
 $('#gain').addEventListener('input', e=>{ GAIN=parseFloat(e.target.value); persistSettings(); });
+$('#vol').addEventListener('input', e=>{ VOL=parseFloat(e.target.value); audio.volume=VOL; persistSettings(); });
 $('#bars').addEventListener('input', e=>{ NBARS=parseInt(e.target.value); vals.length=0; persistSettings(); });
 $('#rows').addEventListener('input', e=>{ ROWDENS=parseFloat(e.target.value); persistSettings(); });
 $('#bright').addEventListener('input', e=>{ BRIGHT=parseFloat(e.target.value); persistSettings(); });
 $('#theme').addEventListener('change', e=>{ THEME=e.target.value; persistSettings(); });
 $('#coloraxis').addEventListener('change', e=>{ COLORAXIS=e.target.value; persistSettings(); });
 $('#hideOffline').addEventListener('change', e=>{ HIDE_OFFLINE=e.target.checked; persistSettings(); renderStations(); });
+$('#resetViewBtn').addEventListener('click', resetView);
+
+$('#saveCfgBtn').addEventListener('click', downloadSettings);
+$('#loadCfgBtn').addEventListener('click', ()=> $('#cfgInput').click());
+$('#cfgInput').addEventListener('change', e=>{ if(e.target.files[0]) loadSettingsFromFile(e.target.files[0]); e.target.value=''; });
+$('#resetBtn').addEventListener('click', resetStations);
+$('#exportStationsBtn').addEventListener('click', exportStations);
+$('#importStationsBtn').addEventListener('click', ()=> $('#stationsImportInput').click());
+$('#stationsImportInput').addEventListener('change', e=>{ if(e.target.files[0]) importStationsFile(e.target.files[0]); e.target.value=''; });
 
 $('#saveCfgBtn').addEventListener('click', downloadSettings);
 $('#loadCfgBtn').addEventListener('click', ()=> $('#cfgInput').click());
@@ -880,11 +987,34 @@ window.addEventListener('drop', e=>{
 // keyboard
 document.addEventListener('keydown', e=>{
   if (e.key==='Escape' && helpOverlay.classList.contains('show')){ closeHelp(); return; }
-  if (e.target.tagName==='INPUT') return;
-  if (e.key===' '){ e.preventDefault(); togglePlay(); }
-  else if (e.key==='f'||e.key==='F') toggleFullscreen();
-  else if (e.key==='ArrowRight') nextStation();
-  else if (e.key==='ArrowLeft') prevStation();
+  if (e.target.tagName==='INPUT' || e.target.tagName==='SELECT') return;
+  switch(e.key){
+    // playback / navigation
+    case ' ':          e.preventDefault(); togglePlay(); break;
+    case 'f': case 'F': toggleFullscreen(); break;
+    case 'ArrowRight': nextStation(); break;
+    case 'ArrowLeft':  prevStation(); break;
+    // volume
+    case 'ArrowUp':    e.preventDefault(); setVol(VOL+0.05, true); break;
+    case 'ArrowDown':  e.preventDefault(); setVol(VOL-0.05, true); break;
+    // gain
+    case '+': case '=': setGain(GAIN+0.05, true); break;
+    case '-': case '_': setGain(GAIN-0.05, true); break;
+    // bars
+    case ']': setBars(NBARS+8, true); break;
+    case '[': setBars(NBARS-8, true); break;
+    // rows
+    case '}': setRows(ROWDENS+0.1, true); break;
+    case '{': setRows(ROWDENS-0.1, true); break;
+    // brightness
+    case '.': case '>': setBright(BRIGHT+0.05, true); break;
+    case ',': case '<': setBright(BRIGHT-0.05, true); break;
+    // theme / color axis / reset
+    case 't': cycleTheme(1, true); break;
+    case 'T': cycleTheme(-1, true); break;
+    case 'c': case 'C': toggleColorAxis(true); break;
+    case 'r': case 'R': resetView(); break;
+  }
 });
 
 // auto-hide cursor/controls in fullscreen
@@ -901,6 +1031,7 @@ function hideHint(){ $('#hint').style.opacity='0'; }
 
 // ---------- boot ----------
 loadSettingsFromLocal();      // restore last-used settings (no clicks)
+audio.volume = VOL;           // apply saved volume
 renderStations();
 resize();
 draw();
